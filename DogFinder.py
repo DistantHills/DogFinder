@@ -3,6 +3,7 @@
 # Script to search various rescue websites for suitable dogs
 # (suitable = available, child-friendly and reasonably local).
 # Output is an HTML file with suitable dogs 
+# Mastered on GitHub
 # V1 Sep 2021 Estella - initial version
 
 import urllib2, re
@@ -15,19 +16,15 @@ class DogInfo(object):
         self.mName = ""
         self.mURL = ""
         # WIBNI - add description and photo from the site
-        self.description = ""
+        # self.description = ""
 
 
 ########################################################
 # Generic base class to provide tools to access a rescue website
-#
-# @@@ Note to self - consider changing to an abstract class using ABC, 
-# because that's basically what this is (abstract class or interface definition)
 ########################################################
 class RescueWebsite(object):
     def __init__(self):
         self.mSiteDisplayName = ""
-        # @@@ Don't store list HTML - just need to know what page we're on??? TBD
         self.mCurrentDogListPage = None
         self.mCurrentDogPage = None
         self.mDogURLs = []
@@ -105,12 +102,9 @@ class BlueCross(RescueWebsite):
         # - we ignore the "can live with" options on their page because it's 
         # not clear how the 2 different child options interact, so we'd prefer to
         # check that ourselves
-        # - Currently the list looks like it's on a single page.  I can't think of a way to 
-        # check if it might go onto multiple pages if they have lots of animals.
-        print "@@@ BlueCross, go to next list page"
+        # - Currently the list looks like it's on a single page.  
+        print "@@@ BlueCross, go to next list page - DO NOT USE YET"
         urlString = "https://www.bluecross.org.uk/rehome/dog?Location=Hampshire:%20Southampton%20rehoming%20centre,Oxfordshire:%20Burford%20rehoming%20centre&Reserved=No"
-        mCurrentDogPage = None
-        # @@@ still to be implemented fully
         gotNextPage = False
         return gotNextPage
  
@@ -129,18 +123,18 @@ class SNDogs(RescueWebsite):
         # - no option to filter for locations 
         #   (all dogs are in Swindon) or reserved status.
         # - all results on a single page
-        print "@@@" + self.mSiteDisplayName + " list page"
+        # print "@@@" + self.mSiteDisplayName + " list page"
         wentToNextDogListPage = False
         if self.mCurrentDogListPage == None:
             # Get the HTML for the dog list page
             # and then search it for the per-dog page URLs 
-            print "@@ go to first (& only) page"
-            listPageURL = "https://www.sndogs.uk/adopt-a-dog/available-dogs/"
+
             # Each dog starts with <div class="dog-box three-in-a-row odd">
             # followed by the per-dog URL - which we want - 
             # then<div class="dog-photo"> (for an unreserved dog)
             # or <span class="reserved-banner"> for a reserved dog (ignore these dogs)
             regexForUnreservedDogURLs = '<div class="dog-box three-in-a-row odd">\s+<a href="(\S*)">\s+<div class="dog-photo">'
+            listPageURL = "https://www.sndogs.uk/adopt-a-dog/available-dogs/"
             self.setDogURLList(listPageURL, regexForUnreservedDogURLs)
             
             wentToNextDogListPage = True
@@ -157,8 +151,6 @@ class SNDogs(RescueWebsite):
             nameSearch = re.search('<title>(\S+) -', self.mCurrentDogPage)            
             dogInfo.mName = nameSearch.group(1)
             dogInfo.mURL = self.mDogURLs[self.mDogURLsCurrentIndex]
-        else:
-            print "@@@ Ignore dog who can't live with children"
             
         return dogInfo
 
@@ -179,7 +171,6 @@ class DogsTrust(RescueWebsite):
         #   near us
         # - looks like reserved dogs are already filtered out
         # - results are on multiple pages
-        print "@@@" + self.mSiteDisplayName + " list page"
         wentToNextDogListPage = False
 
         # Set up the regex to find URLs for per-dog pages.
@@ -190,7 +181,6 @@ class DogsTrust(RescueWebsite):
         if self.mCurrentDogListPage is None:
             # Get the HTML for the dog list page
             # and then search it for the per-dog page URLs 
-            print "@@ go to first page"
             listPageURL = "https://www.dogstrust.org.uk/rehoming/dogs/filters/eve~~~~~n~~sec?extra-centre=ken,new"
             self.setDogURLList(listPageURL, regexForDogURLs)
 
@@ -226,8 +216,6 @@ class DogsTrust(RescueWebsite):
             nameSearch = re.search('<meta property="keywords" content="(\S+)"', self.mCurrentDogPage)            
             dogInfo.mName = nameSearch.group(1)
             dogInfo.mURL = self.mDogURLs[self.mDogURLsCurrentIndex]            
-        else:
-            print "@@@ Discard adult only dog"
         return dogInfo
 
 
@@ -245,25 +233,19 @@ outputHTML = '<html lang="en-US"> \
     <body> <table>\r'
         
 for site in sitesToSearch:
-    while (site.gotoNextDogListPage()):
-        while (site.gotoNextDogPage()):
-            dogInfo = site.getCurrentDogInfo()
-            if dogInfo is not None:
-                print dogInfo.mName
-                outputHTML = outputHTML + "<tr><td>" + site.mSiteDisplayName + \
-                         "</td><td> <a href=\"" + dogInfo.mURL + "\">" + dogInfo.mName + "</a></td></tr>"
-
-    # try:
-        # site.gotoNextDogListPage()
-        # site.gotoNextDogListPage()
-        
-        # # while (site.gotoNextDogListPage()):
-            # # while (site.gotoNextDogPage()):
-                # # dogInfo = site.getCurrentDogInfo()
-                # # print "@@@ got dog info"
-    # except:
-        # print "@@@ problem accessing site"
-        # print 
+    try:
+        print "=====" + site.mSiteDisplayName
+        while (site.gotoNextDogListPage()):
+            while (site.gotoNextDogPage()):
+                dogInfo = site.getCurrentDogInfo()
+                if dogInfo is not None:
+                    print dogInfo.mName
+                    outputHTML = outputHTML + "<tr><td>" + site.mSiteDisplayName + \
+                             "</td><td> <a href=\"" + dogInfo.mURL + "\">" + dogInfo.mName + "</a></td></tr>"
+    except Exception as e:
+        print "Failure accessing site:"
+        print e
+        print "Moving onto next site"
         
 # Wrap up & finish
 outputHTML = outputHTML + "</table> </body>"
