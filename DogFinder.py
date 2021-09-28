@@ -133,7 +133,6 @@ class SNDogs(RescueWebsite):
             
             self.mGoodDogURLs = re.findall(goodDogRegex, self.mCurrentDogListPage)
             self.mCurrentGoodDogIndex = -1
-            print self.mGoodDogURLs
             self.mCurrentDogPage = None
             wentToNextListPage = True
         return wentToNextListPage
@@ -158,11 +157,13 @@ class SNDogs(RescueWebsite):
         # but otherwise assume they're fine
         dogInfo = None
         
-        if re.match("<p><strong>Can live with children\?<\/strong>\s*No", self.mCurrentDogPage) is None:
+        if re.search("<p><strong>Can live with children\?<\/strong>\s*No", self.mCurrentDogPage) is None:
             dogInfo = DogInfo()
             nameSearch = re.search('<title>(\S+) -', self.mCurrentDogPage)            
             dogInfo.mName = nameSearch.group(1)
             dogInfo.mURL = self.mGoodDogURLs[self.mCurrentGoodDogIndex]
+        else:
+            print "@@@ Ignore dog who can't live with children"
             
         return dogInfo
 
@@ -175,7 +176,7 @@ class DogsTrust(RescueWebsite):
         RescueWebsite.__init__(self)
         self.mSiteDisplayName = "Dogs Trust"
         self.mGoodDogURLs = []
-        # @@@ convert SN specific properties
+        mCurrentListPageIndex = 0
         self.mCurrentGoodDogIndex = -1
         OnCurrentListPage = None
     
@@ -193,11 +194,12 @@ class DogsTrust(RescueWebsite):
             # We have to spoof a user agent, otherwise the request is blocked
             print "@@ go to first page"
             url = "https://www.dogstrust.org.uk/rehoming/dogs/filters/eve~~~~~n~~sec?extra-centre=ken,new"
-            response = urllib2.urlopen(urllib2.Request(url, headers={'User-Agent' : "Magic Browser"}) )
+            request = urllib2.Request(url, headers={'User-Agent' : "Magic Browser"}) 
+            response = urllib2.urlopen(request)
             self.mCurrentDogListPage = response.read()
             response.close()
             
-            # While we're here, search the HTML and 
+            # Search the HTML and 
             # store a list of all dog URLs, for use later
             #
             # Each dog on the list page starts with class="grid__element" href="/rehoming/dogs/dog/filters/~~~~~n~~sec/1249876/alba">
@@ -209,11 +211,23 @@ class DogsTrust(RescueWebsite):
             # Interesting, we can use list comprehension to prefix the URLs in one go (rather like R)
             self.mGoodDogURLs = [("https://www.dogstrust.org.uk/rehoming/dogs/dog/"+ partURL) for partURL in self.mGoodDogURLs]
             
+            self.mCurrentListPageIndex= 1
             self.mCurrentGoodDogIndex = -1
             self.mCurrentDogPage = ""
             wentToNextListPage = True
         else:
+            # Go to next page, if there is one.
+            # Is there a "Next page" button on the current list page?
+            # If so, go to its URL @@@ ECLC in progress
+            # These have URLs https://www.dogstrust.org.uk/rehoming/dogs/filters/eve~~~~~n~~sec/page/2?extra-centre=ken,new
+            
+            re.search('id="BodyContent_DogList1_lnkNext" class="btn btn-primary btn--next" rel="next">', self.mCurrentDogListPage)
+            
+            id="BodyContent_DogList1_lnkNext" class="btn btn-primary btn--next" rel="next">
+            href="/rehoming/dogs/filters/eve~~~~~n~~sec/page/2?extra-centre=ken,new" id="BodyContent_DogList1_lnkNext" class="btn btn-primary btn--next" rel="next">Next page
+            
             print "@@@ To do - move to next page, if there is one"
+            #
         return wentToNextListPage
 
     # Download HTML for next dog page (if available
@@ -225,7 +239,8 @@ class DogsTrust(RescueWebsite):
         # Note to self - python lists index from 0
         self.mCurrentGoodDogIndex = self.mCurrentGoodDogIndex  + 1
         if self.mCurrentGoodDogIndex < len(self.mGoodDogURLs):
-            response = urllib2.urlopen(self.mGoodDogURLs[self.mCurrentGoodDogIndex])
+            request = urllib2.Request(self.mGoodDogURLs[self.mCurrentGoodDogIndex], headers={'User-Agent' : "Magic Browser"}) 
+            response = urllib2.urlopen(request)
             self.mCurrentDogPage = response.read()
             response.close()
             
@@ -233,28 +248,22 @@ class DogsTrust(RescueWebsite):
         return wentToNextDogPage
     
     def getCurrentDogInfo(self):
-        # For Dogs Trust, until proved otherwise, assume dogs 
-        # flagged as suitable for secondary school age, will also include
-        # dogs that are suitable for primary school age
-        # So - if the search gives us a dog, then it's suitable
-        dogInfo = DogInfo()
-        # Title has the form <title id="HeadContent_pgTitle">Rescue Dog | Boxer   | Murphy | Dogs Trust</title> 
-        nameSearch = re.search('<title [\S\s]*\|[\S\s]*\|\s+(\S+) ', self.mCurrentDogPage)            
-        dogInfo.mName = nameSearch.group(1)
-        dogInfo.mRescueWebsite = self.mSiteDisplayName
-        dogInfo.mURL = self.mGoodDogURLs[self.mCurrentGoodDogIndex]
+        # For Dogs Trust - even if you filter for secondary school age-suitable,
+        # it still shows some dogs that are adult-only in the description.
+        # We need to filter these out
+        # Future task - they sometimes give a minimum age - put this into the description (or filter out if too old)
         dogInfo = None
         
-        if re.match("<p><strong>Can live with children\?<\/strong>\s*No", self.mCurrentDogPage) is None:
+        if re.search("adult only", self.mCurrentDogPage) is None:
             dogInfo = DogInfo()
-            nameSearch = re.search('<title>(\S+) -', self.mCurrentDogPage)            
+            # The Dogs Trust title sometimes has non-alphanumeric characters, so it's easier to use 
+            # <meta property="keywords" content="Evie" /> to get the name
+            nameSearch = re.search('<meta property="keywords" content="(\S+)"', self.mCurrentDogPage)            
             dogInfo.mName = nameSearch.group(1)
-            dogInfo.mRescueWebsite = self.mSiteDisplayName
-            dogInfo.mURL = self.mGoodDogURLs[self.mCurrentGoodDogIndex]
-            
+            dogInfo.mURL = self.mGoodDogURLs[self.mCurrentGoodDogIndex]            
+        else:
+            print "@@@ Discard adult only dog"
         return dogInfo
-
-
 
 
 
@@ -262,7 +271,7 @@ class DogsTrust(RescueWebsite):
 # Code runs from here
 ########################################################
 # Create a list of sites to search
-sitesToSearch = [DogsTrust()]
+sitesToSearch = [DogsTrust(), SNDogs()]
 #sitesToSearch.append(rescueSite)
     
 # Output the results as HTML, for more user-friendly display
@@ -281,8 +290,9 @@ for site in sitesToSearch:
     while (site.gotoNextDogListPage()):
         while (site.gotoNextDogPage()):
             dogInfo = site.getCurrentDogInfo()
-            print dogInfo.mName
-            outputHTML = outputHTML + "<tr><td>" + site.mSiteDisplayName + \
+            if dogInfo is not None:
+                print dogInfo.mName
+                outputHTML = outputHTML + "<tr><td>" + site.mSiteDisplayName + \
                          "</td><td> <a href=\"" + dogInfo.mURL + "\">" + dogInfo.mName + "</a></td></tr>"
 
     # try:
