@@ -27,9 +27,11 @@ class DogInfo(object):
 class RescueWebsite(object):
     def __init__(self):
         self.mSiteDisplayName = ""
+        # @@@ Don't store list HTML - just need to know what page we're on??? TBD
         self.mCurrentDogListPage = None
         self.mCurrentDogPage = None
-        print "RescueWebsite init"
+        self.mDogURLs = []
+        self.mDogURLsCurrentIndex = -1
         
     
     # gotoNextDogListPage()
@@ -47,27 +49,49 @@ class RescueWebsite(object):
     
     # gotoNextDogPage()
     #
-    # First time this is called, downloads the page
-    # for the first dog on the current list page. 
-    # Next time(s) gets the page for the next dog, until 
-    # we run out of dogs on that page.
+    # Iterates through the list of per-dog URLs
+    # we got from the current list page.
     #
     # Returns True = we got a new dog page, False = no more dogs on the list page
     def gotoNextDogPage(self):
-        return False
-    
-    
+        self.mCurrentDogPage = ""
+        wentToNextDogPage = False
+        # Note to self - python lists index from 0
+        self.mDogURLsCurrentIndex = self.mDogURLsCurrentIndex  + 1
+        if self.mDogURLsCurrentIndex < len(self.mDogURLs):
+            request = urllib2.Request(self.mDogURLs[self.mDogURLsCurrentIndex], headers={'User-Agent' : "Magic Browser"}) 
+            response = urllib2.urlopen(request)
+            self.mCurrentDogPage = response.read()
+            response.close()
+            
+            wentToNextDogPage = True
+        return wentToNextDogPage
+        
     # getCurrentDogInfo()
     #
     # If the dog on the current page is suitable,
     # returns DogInfo with info about the dog, otherwise returns None
     def getCurrentDogInfo(self):
         return None
+
+    # Private utility function to fill up the list of URLs for per-dog pages
+    def setDogURLList(self, listPageURL, regexForDogURLs):
+        # Download the list page HTML
+        # We have to spoof a user agent, otherwise the request may be blocked, e.g. by DogsTrust
+        request = urllib2.Request(listPageURL, headers={'User-Agent' : "Magic Browser"}) 
+        response = urllib2.urlopen(request)
+        self.mCurrentDogListPage = response.read()
+        response.close()
+
+        # Search the HTML for the necessary URLs to per-dog pages
+        self.mDogURLs = re.findall(regexForDogURLs, self.mCurrentDogListPage)
+        self.mDogURLsCurrentIndex = -1
+        self.mCurrentDogPage = ""    
     
     
 ########################################################
 # Specific class to access the Blue Cross website
-# @@@ To do - when to set display name, prob need to add to init() then call super class
+# @@@ Still to be implemented.  The HTML etc. on their site is complex!
 ########################################################
 class BlueCross(RescueWebsite):
 
@@ -93,16 +117,12 @@ class BlueCross(RescueWebsite):
     
 ########################################################
 # Specific class to access the SN Dogs website
-# @@@ To do - when to set display name, prob need to add to init() then call super class
 ########################################################
 class SNDogs(RescueWebsite):
 
     def __init__(self):
         RescueWebsite.__init__(self)
         self.mSiteDisplayName = "SNDogs"
-        self.mGoodDogURLs = []
-        self.mCurrentGoodDogIndex = -1
-        OnCurrentListPage = None
     
     def gotoNextDogListPage(self):
         # For SN Dogs:
@@ -110,47 +130,22 @@ class SNDogs(RescueWebsite):
         #   (all dogs are in Swindon) or reserved status.
         # - all results on a single page
         print "@@@" + self.mSiteDisplayName + " list page"
-        print self.mSiteDisplayName
-        wentToNextListPage = False
+        wentToNextDogListPage = False
         if self.mCurrentDogListPage == None:
-            # Store the HTML for dog list page
+            # Get the HTML for the dog list page
+            # and then search it for the per-dog page URLs 
             print "@@ go to first (& only) page"
-            response = urllib2.urlopen("https://www.sndogs.uk/adopt-a-dog/available-dogs/")
-            self.mCurrentDogListPage = response.read()
-            response.close()
-            
-            # While we're here, search the HTML and 
-            # store a list of all unreserved dog URLs, for use later
-            #
+            listPageURL = "https://www.sndogs.uk/adopt-a-dog/available-dogs/"
             # Each dog starts with <div class="dog-box three-in-a-row odd">
             # followed by the per-dog URL - which we want - 
-            # then<div class="dog-photo"> (for a good dog)
-            # or <span class="reserved-banner"> for a bad/reserved dog.
-            goodDogRegex = '<div class="dog-box three-in-a-row odd">\s+<a href="(\S*)">\s+<div class="dog-photo">'
+            # then<div class="dog-photo"> (for an unreserved dog)
+            # or <span class="reserved-banner"> for a reserved dog (ignore these dogs)
+            regexForUnreservedDogURLs = '<div class="dog-box three-in-a-row odd">\s+<a href="(\S*)">\s+<div class="dog-photo">'
+            self.setDogURLList(listPageURL, regexForUnreservedDogURLs)
             
-            # @@ for testing - temporarily include reserved dogs, so we can check our bad dog theory
-            # goodDogRegex = '<div class="dog-box three-in-a-row odd">\s+<a href="(\S*)">\s+'
-            
-            self.mGoodDogURLs = re.findall(goodDogRegex, self.mCurrentDogListPage)
-            self.mCurrentGoodDogIndex = -1
-            self.mCurrentDogPage = None
-            wentToNextListPage = True
-        return wentToNextListPage
+            wentToNextDogListPage = True
+        return wentToNextDogListPage
 
-    # Download HTML for next dog page (if available)
-    def gotoNextDogPage(self):
-        print "@@@" + self.mSiteDisplayName + " goto dog page"
-        self.mCurrentDogPage = ""
-        wentToNextDogPage = False
-        # Note to self - python lists index from 0
-        self.mCurrentGoodDogIndex = self.mCurrentGoodDogIndex  + 1
-        if self.mCurrentGoodDogIndex < len(self.mGoodDogURLs):
-            response = urllib2.urlopen(self.mGoodDogURLs[self.mCurrentGoodDogIndex])
-            self.mCurrentDogPage = response.read()
-            response.close()
-            
-            wentToNextDogPage = True
-        return wentToNextDogPage
     
     def getCurrentDogInfo(self):
         # For SNDogs, rule out any dogs that say "<p><strong>Can live with children?</strong> No</p>"
@@ -161,11 +156,12 @@ class SNDogs(RescueWebsite):
             dogInfo = DogInfo()
             nameSearch = re.search('<title>(\S+) -', self.mCurrentDogPage)            
             dogInfo.mName = nameSearch.group(1)
-            dogInfo.mURL = self.mGoodDogURLs[self.mCurrentGoodDogIndex]
+            dogInfo.mURL = self.mDogURLs[self.mDogURLsCurrentIndex]
         else:
             print "@@@ Ignore dog who can't live with children"
             
         return dogInfo
+
 
 ########################################################
 # Specific class to access the Dogs Trust website
@@ -175,10 +171,6 @@ class DogsTrust(RescueWebsite):
     def __init__(self):
         RescueWebsite.__init__(self)
         self.mSiteDisplayName = "Dogs Trust"
-        self.mGoodDogURLs = []
-        mCurrentListPageIndex = 0
-        self.mCurrentGoodDogIndex = -1
-        OnCurrentListPage = None
     
     def gotoNextDogListPage(self):
         # For DogsTrust:
@@ -188,64 +180,37 @@ class DogsTrust(RescueWebsite):
         # - looks like reserved dogs are already filtered out
         # - results are on multiple pages
         print "@@@" + self.mSiteDisplayName + " list page"
-        wentToNextListPage = False
-        if self.mCurrentDogListPage == None:
-            # Store the HTML for first dog list page
-            # We have to spoof a user agent, otherwise the request is blocked
+        wentToNextDogListPage = False
+
+        # Set up the regex to find URLs for per-dog pages.
+        # Each dog on the list page starts with class="grid__element" href="/rehoming/dogs/dog/filters/~~~~~n~~sec/1249876/alba">
+        # From testing, we can access a dog via a simpler URL - https://www.dogstrust.org.uk/rehoming/dogs/dog/1249876/alba
+        regexForDogURLs = 'class="grid__element" href="\/rehoming\/dogs\S+sec\/(\S+)\?'
+
+        if self.mCurrentDogListPage is None:
+            # Get the HTML for the dog list page
+            # and then search it for the per-dog page URLs 
             print "@@ go to first page"
-            url = "https://www.dogstrust.org.uk/rehoming/dogs/filters/eve~~~~~n~~sec?extra-centre=ken,new"
-            request = urllib2.Request(url, headers={'User-Agent' : "Magic Browser"}) 
-            response = urllib2.urlopen(request)
-            self.mCurrentDogListPage = response.read()
-            response.close()
-            
-            # Search the HTML and 
-            # store a list of all dog URLs, for use later
-            #
-            # Each dog on the list page starts with class="grid__element" href="/rehoming/dogs/dog/filters/~~~~~n~~sec/1249876/alba">
-            # From testing, we can access a dog via a simpler URL - https://www.dogstrust.org.uk/rehoming/dogs/dog/1249876/alba
-            # Note - this goodDogRegex will need updating if we update the search filter
-            goodDogRegex = 'class="grid__element" href="\/rehoming\/dogs\S+sec\/(\S+)\?'
-            
-            self.mGoodDogURLs = re.findall(goodDogRegex, self.mCurrentDogListPage)
+            listPageURL = "https://www.dogstrust.org.uk/rehoming/dogs/filters/eve~~~~~n~~sec?extra-centre=ken,new"
+            self.setDogURLList(listPageURL, regexForDogURLs)
+
+            # That will only give us the suffix for each URL, so add the necessary prefix
             # Interesting, we can use list comprehension to prefix the URLs in one go (rather like R)
-            self.mGoodDogURLs = [("https://www.dogstrust.org.uk/rehoming/dogs/dog/"+ partURL) for partURL in self.mGoodDogURLs]
-            
-            self.mCurrentListPageIndex= 1
-            self.mCurrentGoodDogIndex = -1
-            self.mCurrentDogPage = ""
-            wentToNextListPage = True
+            self.mDogURLs = [("https://www.dogstrust.org.uk/rehoming/dogs/dog/"+ partURL) for partURL in self.mDogURLs]
+            wentToNextDogListPage = True
         else:
             # Go to next page, if there is one.
             # Is there a "Next page" button on the current list page?
-            # If so, go to its URL @@@ ECLC in progress
-            # These have URLs https://www.dogstrust.org.uk/rehoming/dogs/filters/eve~~~~~n~~sec/page/2?extra-centre=ken,new
-            
-            re.search('id="BodyContent_DogList1_lnkNext" class="btn btn-primary btn--next" rel="next">', self.mCurrentDogListPage)
-            
-            id="BodyContent_DogList1_lnkNext" class="btn btn-primary btn--next" rel="next">
-            href="/rehoming/dogs/filters/eve~~~~~n~~sec/page/2?extra-centre=ken,new" id="BodyContent_DogList1_lnkNext" class="btn btn-primary btn--next" rel="next">Next page
-            
-            print "@@@ To do - move to next page, if there is one"
-            #
-        return wentToNextListPage
-
-    # Download HTML for next dog page (if available
-    # @@@ Could move this to base class, because SN & DogsTrust are identical
-    def gotoNextDogPage(self):
-        print "@@@" + self.mSiteDisplayName + " goto dog page"
-        self.mCurrentDogPage = ""
-        wentToNextDogPage = False
-        # Note to self - python lists index from 0
-        self.mCurrentGoodDogIndex = self.mCurrentGoodDogIndex  + 1
-        if self.mCurrentGoodDogIndex < len(self.mGoodDogURLs):
-            request = urllib2.Request(self.mGoodDogURLs[self.mCurrentGoodDogIndex], headers={'User-Agent' : "Magic Browser"}) 
-            response = urllib2.urlopen(request)
-            self.mCurrentDogPage = response.read()
-            response.close()
-            
-            wentToNextDogPage = True
-        return wentToNextDogPage
+            # HTML looks like this:
+            # <a href="/rehoming/dogs/filters/eve~~~~~n~~sec/page/2?extra-centre=ken,new" id="BodyContent_DogList1_lnkNext" class="btn btn-primary 
+            # btn--next" rel="next">Next page
+            nextButtonSearch = re.search('<a href="(\S*)" id="BodyContent_DogList1_lnkNext" [\S\s]*?>Next page', self.mCurrentDogListPage)
+            if nextButtonSearch is not None:
+                nextListPageURL = "https://www.dogstrust.org.uk" + nextButtonSearch.group(1) 
+                self.setDogURLList(nextListPageURL, regexForDogURLs)
+                self.mDogURLs = [("https://www.dogstrust.org.uk/rehoming/dogs/dog/"+ partURL) for partURL in self.mDogURLs]
+                wentToNextDogListPage = True                
+        return wentToNextDogListPage
     
     def getCurrentDogInfo(self):
         # For Dogs Trust - even if you filter for secondary school age-suitable,
@@ -260,19 +225,16 @@ class DogsTrust(RescueWebsite):
             # <meta property="keywords" content="Evie" /> to get the name
             nameSearch = re.search('<meta property="keywords" content="(\S+)"', self.mCurrentDogPage)            
             dogInfo.mName = nameSearch.group(1)
-            dogInfo.mURL = self.mGoodDogURLs[self.mCurrentGoodDogIndex]            
+            dogInfo.mURL = self.mDogURLs[self.mDogURLsCurrentIndex]            
         else:
             print "@@@ Discard adult only dog"
         return dogInfo
 
 
-
 ########################################################
 # Code runs from here
 ########################################################
-# Create a list of sites to search
 sitesToSearch = [DogsTrust(), SNDogs()]
-#sitesToSearch.append(rescueSite)
     
 # Output the results as HTML, for more user-friendly display
 outputHTML = '<html lang="en-US"> \
@@ -281,12 +243,8 @@ outputHTML = '<html lang="en-US"> \
     <meta charset="UTF-8" />    \
     <meta id="viewport" name=viewport content="width=1000"> <title>Possible dogs</title> \r \
     <body> <table>\r'
-    
-    
+        
 for site in sitesToSearch:
-    # site.gotoNextDogListPage()
-    # site.gotoNextDogListPage()
-    
     while (site.gotoNextDogListPage()):
         while (site.gotoNextDogPage()):
             dogInfo = site.getCurrentDogInfo()
