@@ -13,7 +13,6 @@ import urllib2, re
 class DogInfo(object):
     def __init__(self):
         self.mName = ""
-        self.mRescueWebsite = ""
         self.mURL = ""
         # WIBNI - add description and photo from the site
         self.description = ""
@@ -101,8 +100,8 @@ class SNDogs(RescueWebsite):
     def __init__(self):
         RescueWebsite.__init__(self)
         self.mSiteDisplayName = "SNDogs"
-        self.mSNDogsGoodDogURLs = []
-        self.mSNDogsCurrentGoodDogIndex = -1
+        self.mGoodDogURLs = []
+        self.mCurrentGoodDogIndex = -1
         OnCurrentListPage = None
     
     def gotoNextDogListPage(self):
@@ -110,7 +109,7 @@ class SNDogs(RescueWebsite):
         # - no option to filter for locations 
         #   (all dogs are in Swindon) or reserved status.
         # - all results on a single page
-        print "@@@ SN Dogs list page"
+        print "@@@" + self.mSiteDisplayName + " list page"
         print self.mSiteDisplayName
         wentToNextListPage = False
         if self.mCurrentDogListPage == None:
@@ -132,22 +131,22 @@ class SNDogs(RescueWebsite):
             # @@ for testing - temporarily include reserved dogs, so we can check our bad dog theory
             # goodDogRegex = '<div class="dog-box three-in-a-row odd">\s+<a href="(\S*)">\s+'
             
-            self.mSNDogsGoodDogURLs = re.findall(goodDogRegex, self.mCurrentDogListPage)
-            self.mSNDogsCurrentGoodDogIndex = -1
-            print self.mSNDogsGoodDogURLs
+            self.mGoodDogURLs = re.findall(goodDogRegex, self.mCurrentDogListPage)
+            self.mCurrentGoodDogIndex = -1
+            print self.mGoodDogURLs
             self.mCurrentDogPage = None
             wentToNextListPage = True
         return wentToNextListPage
 
     # Download HTML for next dog page (if available)
     def gotoNextDogPage(self):
-        print "@@@ SN Dogs gotoNextDogPage"
+        print "@@@" + self.mSiteDisplayName + " goto dog page"
         self.mCurrentDogPage = ""
         wentToNextDogPage = False
         # Note to self - python lists index from 0
-        self.mSNDogsCurrentGoodDogIndex = self.mSNDogsCurrentGoodDogIndex  + 1
-        if self.mSNDogsCurrentGoodDogIndex < len(self.mSNDogsGoodDogURLs):
-            response = urllib2.urlopen(self.mSNDogsGoodDogURLs[self.mSNDogsCurrentGoodDogIndex])
+        self.mCurrentGoodDogIndex = self.mCurrentGoodDogIndex  + 1
+        if self.mCurrentGoodDogIndex < len(self.mGoodDogURLs):
+            response = urllib2.urlopen(self.mGoodDogURLs[self.mCurrentGoodDogIndex])
             self.mCurrentDogPage = response.read()
             response.close()
             
@@ -163,10 +162,99 @@ class SNDogs(RescueWebsite):
             dogInfo = DogInfo()
             nameSearch = re.search('<title>(\S+) -', self.mCurrentDogPage)            
             dogInfo.mName = nameSearch.group(1)
-            dogInfo.mRescueWebsite = self.mSiteDisplayName
-            dogInfo.mURL = self.mSNDogsGoodDogURLs[self.mSNDogsCurrentGoodDogIndex]
+            dogInfo.mURL = self.mGoodDogURLs[self.mCurrentGoodDogIndex]
             
         return dogInfo
+
+########################################################
+# Specific class to access the Dogs Trust website
+########################################################
+class DogsTrust(RescueWebsite):
+
+    def __init__(self):
+        RescueWebsite.__init__(self)
+        self.mSiteDisplayName = "Dogs Trust"
+        self.mGoodDogURLs = []
+        # @@@ convert SN specific properties
+        self.mCurrentGoodDogIndex = -1
+        OnCurrentListPage = None
+    
+    def gotoNextDogListPage(self):
+        # For DogsTrust:
+        # - can only filter for 3 locations.  That's good enough for now - we'll do Evesham, Newbury and Kenilworth
+        #   but in future may want to get all dogs, and then manually search for ~5 locations
+        #   near us
+        # - looks like reserved dogs are already filtered out
+        # - results are on multiple pages
+        print "@@@" + self.mSiteDisplayName + " list page"
+        wentToNextListPage = False
+        if self.mCurrentDogListPage == None:
+            # Store the HTML for first dog list page
+            # We have to spoof a user agent, otherwise the request is blocked
+            print "@@ go to first page"
+            url = "https://www.dogstrust.org.uk/rehoming/dogs/filters/eve~~~~~n~~sec?extra-centre=ken,new"
+            response = urllib2.urlopen(urllib2.Request(url, headers={'User-Agent' : "Magic Browser"}) )
+            self.mCurrentDogListPage = response.read()
+            response.close()
+            
+            # While we're here, search the HTML and 
+            # store a list of all dog URLs, for use later
+            #
+            # Each dog on the list page starts with class="grid__element" href="/rehoming/dogs/dog/filters/~~~~~n~~sec/1249876/alba">
+            # From testing, we can access a dog via a simpler URL - https://www.dogstrust.org.uk/rehoming/dogs/dog/1249876/alba
+            # Note - this goodDogRegex will need updating if we update the search filter
+            goodDogRegex = 'class="grid__element" href="\/rehoming\/dogs\S+sec\/(\S+)\?'
+            
+            self.mGoodDogURLs = re.findall(goodDogRegex, self.mCurrentDogListPage)
+            # Interesting, we can use list comprehension to prefix the URLs in one go (rather like R)
+            self.mGoodDogURLs = [("https://www.dogstrust.org.uk/rehoming/dogs/dog/"+ partURL) for partURL in self.mGoodDogURLs]
+            
+            self.mCurrentGoodDogIndex = -1
+            self.mCurrentDogPage = ""
+            wentToNextListPage = True
+        else:
+            print "@@@ To do - move to next page, if there is one"
+        return wentToNextListPage
+
+    # Download HTML for next dog page (if available
+    # @@@ Could move this to base class, because SN & DogsTrust are identical
+    def gotoNextDogPage(self):
+        print "@@@" + self.mSiteDisplayName + " goto dog page"
+        self.mCurrentDogPage = ""
+        wentToNextDogPage = False
+        # Note to self - python lists index from 0
+        self.mCurrentGoodDogIndex = self.mCurrentGoodDogIndex  + 1
+        if self.mCurrentGoodDogIndex < len(self.mGoodDogURLs):
+            response = urllib2.urlopen(self.mGoodDogURLs[self.mCurrentGoodDogIndex])
+            self.mCurrentDogPage = response.read()
+            response.close()
+            
+            wentToNextDogPage = True
+        return wentToNextDogPage
+    
+    def getCurrentDogInfo(self):
+        # For Dogs Trust, until proved otherwise, assume dogs 
+        # flagged as suitable for secondary school age, will also include
+        # dogs that are suitable for primary school age
+        # So - if the search gives us a dog, then it's suitable
+        dogInfo = DogInfo()
+        # Title has the form <title id="HeadContent_pgTitle">Rescue Dog | Boxer   | Murphy | Dogs Trust</title> 
+        nameSearch = re.search('<title [\S\s]*\|[\S\s]*\|\s+(\S+) ', self.mCurrentDogPage)            
+        dogInfo.mName = nameSearch.group(1)
+        dogInfo.mRescueWebsite = self.mSiteDisplayName
+        dogInfo.mURL = self.mGoodDogURLs[self.mCurrentGoodDogIndex]
+        dogInfo = None
+        
+        if re.match("<p><strong>Can live with children\?<\/strong>\s*No", self.mCurrentDogPage) is None:
+            dogInfo = DogInfo()
+            nameSearch = re.search('<title>(\S+) -', self.mCurrentDogPage)            
+            dogInfo.mName = nameSearch.group(1)
+            dogInfo.mRescueWebsite = self.mSiteDisplayName
+            dogInfo.mURL = self.mGoodDogURLs[self.mCurrentGoodDogIndex]
+            
+        return dogInfo
+
+
 
 
 
@@ -174,13 +262,10 @@ class SNDogs(RescueWebsite):
 # Code runs from here
 ########################################################
 # Create a list of sites to search
-sitesToSearch = [SNDogs()]
+sitesToSearch = [DogsTrust()]
 #sitesToSearch.append(rescueSite)
     
-
-# @@@ WIBNI create output then write to 
-
-outputHTML = ""
+# Output the results as HTML, for more user-friendly display
 outputHTML = '<html lang="en-US"> \
     <!--<![endif]-->  \
     <head>  \
